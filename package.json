@@ -1,0 +1,29 @@
+{
+  "name": "sim-master-pro---chuyên-gia-lọc-sim",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.7.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "playwright": "^1.58.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
