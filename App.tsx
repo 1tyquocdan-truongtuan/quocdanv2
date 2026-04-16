@@ -37,6 +37,7 @@ const mapToCamelCase = (item: any): SimEntry => {
     price: item.price || '',
     menh: item.network || '',
     menhColor: item.color_code || '',
+    status: item.status || 'available',
   };
 };
 
@@ -524,7 +525,7 @@ const App: React.FC = () => {
 
       // 3. Tải dữ liệu SIM
       try {
-        const { data, error } = await supabase.from('kho_sim').select('*');
+        const { data, error } = await supabase.from('kho_sim').select('id,original_phone,normalized_phone,last_six,sim_types,unit_advance_detail,price,network,color_code,status');
         if (error) throw error;
         if (data) {
           setRawData(data.map(mapToCamelCase));
