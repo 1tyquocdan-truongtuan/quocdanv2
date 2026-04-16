@@ -324,6 +324,163 @@ const ColumnHeader: React.FC<{
   );
 };
 
+// Hàm ghi audit log
+const logAudit = async (userEmail: string, userRole: string, action: string, tableName?: string, recordId?: string, details?: any) => {
+  if (!supabase) return;
+  try {
+    await supabase.from('audit_logs').insert([{
+      user_email: userEmail,
+      user_role: userRole,
+      action,
+      table_name: tableName || null,
+      record_id: recordId ? String(recordId) : null,
+      details: details || null,
+    }]);
+  } catch (e) {
+    console.error('Audit log error:', e);
+  }
+};
+
+// Component đăng nhập Admin chuyên nghiệp
+const AdminLoginModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [errorMsg, setErrorMsg] = React.useState('');
+  const [attempts, setAttempts] = React.useState(0);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const MAX_ATTEMPTS = 5;
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setErrorMsg('Vui lòng nhập đầy đủ Email và Mật khẩu!');
+      return;
+    }
+    if (attempts >= MAX_ATTEMPTS) {
+      setErrorMsg('Tài khoản bị khóa sau 5 lần sai. Vui lòng thử lại sau 15 phút.');
+      return;
+    }
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+      if (error) {
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        if (newAttempts >= MAX_ATTEMPTS) {
+          setErrorMsg(`Sai mật khẩu quá ${MAX_ATTEMPTS} lần! Tài khoản bị khóa 15 phút.`);
+          await supabase!.auth.signOut();
+        } else {
+          setErrorMsg(`Sai tài khoản hoặc mật khẩu! (${newAttempts}/${MAX_ATTEMPTS} lần)`);
+        }
+      } else {
+        // Ghi log đăng nhập thành công
+        await logAudit(data.user?.email || email, 'unknown', 'LOGIN', undefined, undefined, { ip: 'browser' });
+        setAttempts(0);
+        onClose();
+      }
+    } catch (e) {
+      setErrorMsg('Lỗi kết nối. Vui lòng thử lại!');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-900/95 to-red-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl border border-slate-100 relative overflow-hidden">
+        {/* Decorative top bar */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-viettel-red via-red-400 to-viettel-red rounded-t-3xl" />
+        
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-gradient-to-br from-red-50 to-red-100 text-viettel-red rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg border border-red-100 rotate-3">
+            <i className="fa-solid fa-shield-halved text-3xl"></i>
+          </div>
+          <h3 className="text-2xl font-black text-slate-800 tracking-tight">Cổng Quản Trị</h3>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">simquocdan.vn — Hệ thống nội bộ</p>
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-400">
+            <i className="fa-solid fa-lock text-green-500"></i>
+            <span>Kết nối bảo mật SSL</span>
+          </div>
+        </div>
+        
+        <div className="space-y-4 mb-6">
+          <div className="relative">
+            <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input
+              type="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setErrorMsg(''); }}
+              placeholder="Email đăng nhập"
+              disabled={isLoading || attempts >= MAX_ATTEMPTS}
+              className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-viettel-red focus:border-viettel-red focus:bg-white outline-none text-slate-800 font-medium transition-all placeholder:text-slate-400 text-sm disabled:opacity-50"
+            />
+          </div>
+          <div className="relative">
+            <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={e => { setPassword(e.target.value); setErrorMsg(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              placeholder="Mật khẩu"
+              disabled={isLoading || attempts >= MAX_ATTEMPTS}
+              className="w-full pl-11 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-viettel-red focus:border-viettel-red focus:bg-white outline-none text-slate-800 font-medium transition-all placeholder:text-slate-400 text-sm disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i>
+            </button>
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+            <i className="fa-solid fa-triangle-exclamation text-viettel-red text-sm mt-0.5 shrink-0"></i>
+            <p className="text-xs text-red-700 font-medium leading-relaxed">{errorMsg}</p>
+          </div>
+        )}
+
+        {attempts > 0 && attempts < MAX_ATTEMPTS && (
+          <div className="mb-4 flex justify-center gap-1.5">
+            {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+              <div key={i} className={`h-1.5 w-8 rounded-full transition-all ${i < attempts ? 'bg-viettel-red' : 'bg-slate-200'}`} />
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={handleLogin}
+            disabled={isLoading || attempts >= MAX_ATTEMPTS}
+            className="w-full py-4 bg-gradient-to-r from-viettel-red to-red-600 text-white rounded-xl font-black uppercase text-sm tracking-widest shadow-lg shadow-red-200 hover:shadow-xl hover:from-red-600 hover:to-red-700 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Đang xác thực...</span></>
+            ) : (
+              <><i className="fa-solid fa-right-to-bracket"></i><span>Đăng nhập</span></>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full py-3.5 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all active:scale-95"
+          >
+            ← Quay lại trang khách hàng
+          </button>
+        </div>
+
+        <p className="text-center text-[10px] text-slate-300 mt-6 font-medium">
+          Hệ thống chỉ dành cho nhân viên được cấp phép.<br/>
+          Mọi thao tác đều được ghi lại và theo dõi.
+        </p>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<'admin' | 'staff' | null>(null);
@@ -1102,6 +1259,7 @@ const App: React.FC = () => {
       }
       
       setRawData(prev => [...prev, ...insertedData]);
+      await logAudit(user?.email || 'unknown', userRole || 'unknown', 'UPLOAD_SIM', 'kho_sim', undefined, { count: insertedData.length });
       setCopyFeedback(`Đã thêm ${insertedData.length} SIM từ file!`);
     } catch (err: any) { 
       console.error(err); 
@@ -1484,95 +1642,7 @@ const App: React.FC = () => {
       <>
         <CustomerView onAdminAccess={() => setShowAdminLogin(true)} rawData={rawData} formatPhoneSmart={formatPhoneSmart} getAutoPrice={getAutoPrice} />
         {showAdminLogin && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200 border border-slate-100">
-              <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-red-50 text-viettel-red rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner border border-red-100">
-                  <i className="fa-solid fa-shield-halved text-3xl"></i>
-                </div>
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight">Quản trị viên</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Đăng nhập hệ thống SIM Master</p>
-              </div>
-              
-              <div className="space-y-4 mb-8">
-                <div className="relative">
-                  <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                  <input 
-                    type="email" 
-                    id="admin-email"
-                    placeholder="Email đăng nhập" 
-                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-viettel-red focus:border-viettel-red focus:bg-white outline-none text-slate-800 font-bold transition-all placeholder:text-slate-400 text-sm"
-                  />
-                </div>
-                <div className="relative">
-                  <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                  <input 
-                    type="password" 
-                    id="admin-password"
-                    placeholder="Mật khẩu" 
-                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-viettel-red focus:border-viettel-red focus:bg-white outline-none text-slate-800 font-bold transition-all placeholder:text-slate-400 text-sm"
-                    onKeyDown={async (e) => {
-                      if (e.key === 'Enter') {
-                        const email = (document.getElementById('admin-email') as HTMLInputElement).value;
-                        const pass = (document.getElementById('admin-password') as HTMLInputElement).value;
-                        if (!email || !pass) {
-                          alert('Vui lòng nhập đầy đủ Email và Mật khẩu!');
-                          return;
-                        }
-                        const { error } = await supabase?.auth.signInWithPassword({ email, password: pass }) || { error: new Error('Supabase not initialized') };
-                        if (error) alert('Sai tài khoản hoặc mật khẩu! Vui lòng thử lại.');
-                        else setShowAdminLogin(false);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={async () => {
-                    const email = (document.getElementById('admin-email') as HTMLInputElement).value;
-                    const pass = (document.getElementById('admin-password') as HTMLInputElement).value;
-                    if (!email || !pass) {
-                      alert('Vui lòng nhập đầy đủ Email và Mật khẩu!');
-                      return;
-                    }
-                    const { error } = await supabase?.auth.signInWithPassword({ email, password: pass }) || { error: new Error('Supabase not initialized') };
-                    if (error) alert('Sai tài khoản hoặc mật khẩu! Vui lòng thử lại.');
-                    else setShowAdminLogin(false);
-                  }}
-                  className="w-full py-4 bg-gradient-to-r from-viettel-red to-red-600 text-white rounded-xl font-black uppercase text-sm tracking-widest shadow-lg shadow-red-200 hover:shadow-xl hover:from-red-600 hover:to-red-700 transition-all active:scale-95"
-                >
-                  Đăng nhập
-                </button>
-                <button 
-                  onClick={async () => {
-                    const email = (document.getElementById('admin-email') as HTMLInputElement).value;
-                    const pass = (document.getElementById('admin-password') as HTMLInputElement).value;
-                    if (!email || !pass) {
-                      alert('Vui lòng nhập đầy đủ Email và Mật khẩu!');
-                      return;
-                    }
-                    const { error } = await supabase?.auth.signUp({ email, password: pass }) || { error: new Error('Supabase not initialized') };
-                    if (error) alert('Lỗi đăng ký: ' + error.message);
-                    else {
-                      alert('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu có) hoặc đăng nhập lại.');
-                      setShowAdminLogin(false);
-                    }
-                  }}
-                  className="w-full py-4 bg-white border-2 border-viettel-red text-viettel-red rounded-xl font-black uppercase text-sm tracking-widest hover:bg-red-50 transition-all active:scale-95"
-                >
-                  Đăng ký
-                </button>
-                <button 
-                  onClick={() => setShowAdminLogin(false)} 
-                  className="w-full py-4 bg-white border-2 border-slate-100 text-slate-500 rounded-xl font-black uppercase text-sm tracking-widest hover:bg-slate-50 hover:text-slate-700 transition-all active:scale-95"
-                >
-                  Quay lại
-                </button>
-              </div>
-            </div>
-          </div>
+          <AdminLoginModal onClose={() => setShowAdminLogin(false)} />
         )}
         
         {/* Floating Action Buttons */}
@@ -1643,9 +1713,10 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           <div className="mb-6 space-y-3">
             <div className="relative group">
-              <input type="file" accept=".xlsx, .xls" multiple onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-              <div className="flex items-center justify-center w-full py-3 px-4 bg-slate-50 text-viettel-red border border-viettel-red/20 border-dashed rounded-xl group-hover:bg-red-50 transition-colors">
-                <i className="fa-solid fa-cloud-arrow-up mr-2"></i><span className="font-bold text-sm">Nhập File Excel SIM</span>
+              <input type="file" accept=".xlsx, .xls" multiple onChange={handleFileUpload} disabled={userRole !== 'admin'} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
+              <div className={`flex items-center justify-center w-full py-3 px-4 border border-dashed rounded-xl transition-colors ${userRole !== 'admin' ? 'bg-slate-100 text-slate-400 border-slate-300 cursor-not-allowed' : 'bg-slate-50 text-viettel-red border-viettel-red/20 group-hover:bg-red-50'}`}>
+                <i className={`fa-solid fa-cloud-arrow-up mr-2 ${userRole !== 'admin' ? '' : ''}`}></i>
+                <span className="font-bold text-sm">{userRole !== 'admin' ? '🔒 Upload SIM (Chỉ Admin)' : 'Nhập File Excel SIM'}</span>
               </div>
             </div>
             <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-3">
@@ -2221,6 +2292,7 @@ const App: React.FC = () => {
                       }
                       const { error } = await supabase.from('kho_sim').delete().not('id', 'is', null);
                       if (error) throw error;
+                      await logAudit(user?.email || 'unknown', userRole || 'unknown', 'DELETE_ALL_SIM', 'kho_sim', undefined, { count: rawData.length });
                       setRawData([]);
                       setSelectedSimIds(new Set());
                       setHeaders([]);
