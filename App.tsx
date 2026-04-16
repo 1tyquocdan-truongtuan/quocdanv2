@@ -708,6 +708,10 @@ const App: React.FC = () => {
   }, [categoryPrices, pricePresets, dotFormattingRules]);
   
   const [selectedSimIds, setSelectedSimIds] = useState<Set<number>>(new Set());
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
+  const [editingPriceValue, setEditingPriceValue] = useState<string>('');
+  const [isBulkPriceModalOpen, setIsBulkPriceModalOpen] = useState(false);
+  const [bulkPriceValue, setBulkPriceValue] = useState<string>('');
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [isSmartPriceModalOpen, setIsSmartPriceModalOpen] = useState(false);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ 'checkbox': 44, 'simTypes': 220, 'unitAdvanceDetail': 220, 'normalizedPhone': 160, 'price': 100, 'menh': 100 });
@@ -1219,6 +1223,43 @@ const App: React.FC = () => {
       };
       reader.readAsArrayBuffer(file);
     });
+  };
+
+  // Hàm lưu giá 1 SIM
+  const handleSaveSinglePrice = async (itemId: number, newPrice: string) => {
+    if (!supabase) return;
+    const trimmed = newPrice.trim();
+    setRawData(prev => prev.map(s => s.id === itemId ? { ...s, price: trimmed } : s));
+    setEditingPriceId(null);
+    try {
+      const { error } = await supabase.from('kho_sim').update({ price: trimmed }).eq('id', itemId);
+      if (error) throw error;
+      await logAudit(user?.email || 'unknown', userRole || 'unknown', 'UPDATE_PRICE', 'kho_sim', String(itemId), { price: trimmed });
+      setCopyFeedback('Đã lưu giá SIM!');
+    } catch (err: any) {
+      setCopyFeedback('Lỗi lưu giá: ' + err.message);
+    }
+  };
+
+  // Hàm lưu giá hàng loạt
+  const handleBulkPrice = async () => {
+    if (!supabase || selectedSimIds.size === 0) return;
+    const trimmed = bulkPriceValue.trim();
+    setLoading(true);
+    try {
+      const ids = Array.from(selectedSimIds);
+      const { error } = await supabase.from('kho_sim').update({ price: trimmed }).in('id', ids);
+      if (error) throw error;
+      setRawData(prev => prev.map(s => selectedSimIds.has(s.id) ? { ...s, price: trimmed } : s));
+      await logAudit(user?.email || 'unknown', userRole || 'unknown', 'BULK_UPDATE_PRICE', 'kho_sim', undefined, { count: ids.length, price: trimmed });
+      setCopyFeedback(`Đã cập nhật giá ${ids.length} SIM!`);
+      setIsBulkPriceModalOpen(false);
+      setBulkPriceValue('');
+    } catch (err: any) {
+      setCopyFeedback('Lỗi cập nhật giá: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1944,6 +1985,11 @@ const App: React.FC = () => {
                           
               <div className="hidden md:flex gap-2">
                 {selectedSimIds.size > 0 && <button onClick={() => setSelectedSimIds(new Set())} className="flex items-center gap-2 bg-slate-100 text-slate-500 px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all active:scale-95">Bỏ chọn tất cả</button>}
+                {selectedSimIds.size > 0 && (
+                  <button onClick={() => { setBulkPriceValue(''); setIsBulkPriceModalOpen(true); }} className="flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-amber-600 transition-all active:scale-95 shadow-md">
+                    <i className="fa-solid fa-tag"></i> Sửa giá {selectedSimIds.size} SIM
+                  </button>
+                )}
               </div>
              <button 
                onClick={() => setIsRightSidebarOpen(true)}
@@ -2002,7 +2048,24 @@ const App: React.FC = () => {
                         <td className="text-center border-r"><input type="checkbox" checked={selectedSimIds.has(item.id)} readOnly className="rounded text-viettel-red w-4 h-4" /></td>
                         <td className={`${currentDensity.padding} font-mono font-black text-viettel-text`}>{item.unitAdvanceDetail || '-'}</td>
                         <td className={`${currentDensity.padding.replace(/text-\[?\w+\]?|text-\w+/, '')} ${currentDensity.phoneFontSize} font-mono font-black text-viettel-red`}>{formatPhoneSmart(item)}</td>
-                        <td className={`${currentDensity.padding.replace(/text-\[?\w+\]?|text-\w+/, '')} ${currentDensity.priceFontSize} text-viettel-text font-bold text-right pr-6`}>{getAutoPrice(item).replace(/k$/i, '')}</td>
+                        <td className={`${currentDensity.padding.replace(/text-\[?\w+\]?|text-\w+/, '')} ${currentDensity.priceFontSize} text-viettel-text font-bold text-right pr-2`} onClick={(e) => { e.stopPropagation(); setEditingPriceId(item.id); setEditingPriceValue(item.price || getAutoPrice(item).replace(/k$/i, '')); }}>
+                          {editingPriceId === item.id ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingPriceValue}
+                              onChange={e => setEditingPriceValue(e.target.value)}
+                              onBlur={() => handleSaveSinglePrice(item.id, editingPriceValue)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveSinglePrice(item.id, editingPriceValue); if (e.key === 'Escape') setEditingPriceId(null); }}
+                              className="w-20 text-right border-2 border-viettel-red rounded-lg px-2 py-0.5 text-sm font-bold outline-none bg-red-50"
+                              onClick={e => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="cursor-text hover:bg-red-50 hover:text-viettel-red px-2 py-0.5 rounded transition-colors" title="Click để sửa giá">
+                              {item.price && item.price !== '' ? item.price : getAutoPrice(item).replace(/k$/i, '')}
+                            </span>
+                          )}
+                        </td>
                         <td className={currentDensity.padding}>
                           <div className="flex flex-wrap gap-x-1 gap-y-0.5 items-center justify-end pr-4">
                             {item.simTypes.map((t, idx) => (
@@ -2272,6 +2335,38 @@ const App: React.FC = () => {
         </div>
       )}
       
+      {/* Modal sửa giá hàng loạt */}
+      {isBulkPriceModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[300] p-4 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom-8 duration-500">
+            <div className="p-8 text-center">
+              <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                <i className="fa-solid fa-tag text-3xl"></i>
+              </div>
+              <h3 className="text-2xl font-black text-viettel-text mb-2 leading-tight">Sửa giá hàng loạt</h3>
+              <p className="text-slate-500 text-sm mb-6">Áp dụng cho <span className="font-black text-viettel-red">{selectedSimIds.size} SIM</span> đang chọn</p>
+              <input
+                type="text"
+                autoFocus
+                value={bulkPriceValue}
+                onChange={e => setBulkPriceValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleBulkPrice()}
+                placeholder="Nhập giá (vd: 500k, 1.2tr, L.Hệ)"
+                className="w-full px-4 py-3.5 border-2 border-amber-300 rounded-2xl text-center font-bold text-lg outline-none focus:border-amber-500 bg-amber-50 mb-6"
+              />
+              <div className="flex flex-col gap-3">
+                <button onClick={handleBulkPrice} className="w-full py-4 bg-amber-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-amber-600 transition-all active:scale-95">
+                  <i className="fa-solid fa-check mr-2"></i> Áp dụng giá mới
+                </button>
+                <button onClick={() => setIsBulkPriceModalOpen(false)} className="w-full py-4 bg-viettel-bg text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all active:scale-95 border border-slate-200">
+                  Hủy bỏ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isDeleteConfirmModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[300] p-4 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl animate-in zoom-in slide-in-from-bottom-8 duration-500">
