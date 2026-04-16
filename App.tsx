@@ -23,7 +23,7 @@ const mapToCamelCase = (item: any): SimEntry => {
     try {
       parsedSimTypes = JSON.parse(item.sim_types);
     } catch (e) {
-      parsedSimTypes = [];
+      parsedSimTypes = item.sim_types ? [item.sim_types] : [];
     }
   }
 
@@ -45,11 +45,12 @@ const mapToSnakeCase = (item: SimEntry) => ({
   original_phone: item.originalPhone,
   normalized_phone: item.normalizedPhone,
   last_six: item.lastSix,
-  sim_types: item.simTypes,
-  unit_advance_detail: item.unitAdvanceDetail,
-  price: item.price,
-  network: item.menh,          // Chỉnh từ menh_ sang network
-  color_code: item.menhColor,   // Chỉnh từ menh_color sang color_code
+  sim_types: JSON.stringify(item.simTypes),
+  unit_advance_detail: item.unitAdvanceDetail || '',
+  price: item.price || '',
+  network: item.menh || '',
+  color_code: item.menhColor || '',
+  status: 'available',
 });
 
 // --- Constants cho Lưu trữ Cố định ---
@@ -696,7 +697,7 @@ const App: React.FC = () => {
           { setting_key: 'categoryPrices', setting_value: categoryPrices },
           { setting_key: 'pricePresets', setting_value: pricePresets },
           { setting_key: 'dotFormattingRules', setting_value: dotFormattingRules }
-        ]);
+        ], { onConflict: 'setting_key' });
       } catch (e) {
         console.error("Failed to save settings to Supabase", e);
       }
@@ -1347,7 +1348,7 @@ const App: React.FC = () => {
         const chunkSize = 1000;
         for (let i = 0; i < snakeCaseData.length; i += chunkSize) {
           const chunk = snakeCaseData.slice(i, i + chunkSize);
-          const { error } = await supabase.from('kho_sim').upsert(chunk);
+          const { error } = await supabase.from('kho_sim').upsert(chunk, { onConflict: 'id' });
           if (error) throw error;
         }
       }
@@ -1385,7 +1386,7 @@ const App: React.FC = () => {
         const chunkSize = 1000;
         for (let i = 0; i < snakeCaseData.length; i += chunkSize) {
           const chunk = snakeCaseData.slice(i, i + chunkSize);
-          const { error } = await supabase.from('kho_sim').upsert(chunk);
+          const { error } = await supabase.from('kho_sim').upsert(chunk, { onConflict: 'id' });
           if (error) throw error;
         }
       }
